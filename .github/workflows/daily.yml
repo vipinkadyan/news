@@ -1,0 +1,34 @@
+name: Daily Image Downloader
+
+on:
+  schedule:
+    - cron: "0 3 * * *"   # daily (UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run script
+        run: python script.py
+
+      - name: Commit images
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add static/pic
+          git commit -m "Daily image update" || echo "No changes"
+          git push
