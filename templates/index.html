@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Hindustan Times ePaper</title>
+<link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+<style>
+html, body {
+    margin:0;
+    padding:0;
+    width:100%;
+    height:100%;
+    background:black;
+    overflow:hidden;
+    user-select:none;
+}
+
+#viewer {
+    width:100vw;
+    height:100vh;
+    position:relative;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    cursor: grab;
+}
+
+#imageContainer {
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform: translate(-50%, -50%) scale(1);
+    will-change: transform;
+    transition: transform 0.15s ease-out;
+}
+
+#imageContainer img {
+    display:block;
+    max-width:none;
+    pointer-events:none;
+    -webkit-user-drag:none;
+}
+
+.btn {
+    position:fixed;
+    top:50%;
+    transform:translateY(-50%);
+    font-size:40px;
+    color:white;
+    background:rgba(0,0,0,0.4);
+    border:none;
+    padding:15px;
+    cursor:pointer;
+}
+
+.btn:disabled {
+    opacity:0.3;
+    cursor:default;
+}
+
+#prev { left:10px; }
+#next { right:10px; }
+
+#imageNumber {
+    position:fixed;
+    top:10px;
+    left:50%;
+    transform:translateX(-50%);
+    color:white;
+    font-size:18px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="viewer">
+    <div id="imageContainer">
+        <img id="image">
+    </div>
+</div>
+
+<div id="imageNumber"></div>
+<button id="prev" class="btn">⟨</button>
+<button id="next" class="btn">⟩</button>
+
+<script>
+/* =======================
+   CONFIG
+======================= */
+const MAX_SCALE = 5;
+const ZOOM_FACTOR = 1.1;
+
+/* =======================
+   STATE
+======================= */
+let images = [];
+let index = 0;
+
+let scale = 1;
+let fitScale = 1;
+let offsetX = 0;
+let offsetY = 0;
+
+let isDragging = false;
+let rafPending = false;
+
+/* =======================
+   ELEMENTS
+======================= */
+const viewer = document.getElementById("viewer");
+const imgContainer = document.getElementById("imageContainer");
+const img = document.getElementById("image");
+const prevBtn = document.getElementById("prev");
+const nextBtn = document.getElementById("next");
+const imgNumber = document.getElementById("imageNumber");
+
+/* =======================
+   LOAD IMAGES
+======================= */
+fetch("/images")
+.then(r => r.json())
+.then(list => {
+    images = list
+        .sort((a,b)=>parseInt(a.match(/\d+/))-parseInt(b.match(/\d+/)))
+        .map(f => "/pic/" + f);
+
+    if (images.length) showImage();
+});
+
+/* =======================
+   IMAGE DISPLAY
+======================= */
+function preload(i){
+    if(images[i]){
+        const im = new Image();
+        im.src = images[i];
+    }
+}
+
+function computeFitScale(){
+    const vw = viewer.clientWidth;
+    const vh = viewer.clientHeight;
+
+    fitScale = Math.min(
+        vw / img.naturalWidth,
+        vh / img.naturalHeight,
+        1
+    );
+}
+
+function showImage(){
+    img.onload = () => {
+        computeFitScale();
+        scale = fitScale;
+        offsetX = offsetY = 0;
+        updateTransform();
+    };
+
+    img.src = images[index];
+    updateButtons();
+    imgNumber.textContent = `Image ${index+1} of ${images.length}`;
+
+    preload(index+1);
+    preload(index-1);
+}
+
+function updateButtons(){
+    prevBtn.disabled = index === 0;
+    nextBtn.disabled = index === images.length - 1;
+}
+
+/* =======================
+   TRANSFORM & CLAMPING
+======================= */
+function clampPan(){
+    const rect = img.getBoundingClientRect();
+    const vw = viewer.clientWidth;
+    const vh = viewer.clientHeight;
+
+    const maxX = Math.max(0, (rect.width - vw) / 2);
+    const maxY = Math.max(0, (rect.height - vh) / 2);
+
+    offsetX = Math.min(maxX, Math.max(-maxX, offsetX));
+    offsetY = Math.min(maxY, Math.max(-maxY, offsetY));
+}
+
+function updateTransform(){
+    if(scale <= fitScale){
+        offsetX = offsetY = 0;
+    } else {
+        clampPan();
+    }
+
+    imgContainer.style.transform =
+        `translate(calc(-50% + ${offsetX}px),
+                   calc(-50% + ${offsetY}px))
+         scale(${scale})`;
+}
+
+/* =======================
+   ZOOM (CURSOR CENTRIC)
+======================= */
+viewer.addEventListener("wheel", e => {
+    e.preventDefault();
+
+    const rect = imgContainer.getBoundingClientRect();
+    let mx = e.clientX - rect.left;
+    let my = e.clientY - rect.top;
+
+    if(mx < 0 || my < 0 || mx > rect.width || my > rect.height){
+        mx = rect.width / 2;
+        my = rect.height / 2;
+    }
+
+    const oldScale = scale;
+    scale *= e.deltaY < 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR;
+    scale = Math.min(Math.max(scale, fitScale), MAX_SCALE);
+
+    const ratio = scale / oldScale;
+    offsetX -= (mx - rect.width/2) * (ratio - 1);
+    offsetY -= (my - rect.height/2) * (ratio - 1);
+
+    updateTransform();
+},{ passive:false });
+
+/* =======================
+   DOUBLE CLICK ZOOM
+======================= */
+viewer.addEventListener("dblclick", () => {
+    if(scale === fitScale){
+        scale = Math.min(fitScale * 2, MAX_SCALE);
+    } else {
+        scale = fitScale;
+        offsetX = offsetY = 0;
+    }
+    updateTransform();
+});
+
+/* =======================
+   DRAG PAN
+======================= */
+viewer.addEventListener("mousedown", e => {
+    if(e.button !== 0 || scale <= fitScale) return;
+    isDragging = true;
+    viewer.style.cursor = "grabbing";
+    imgContainer.style.transition = "none";
+});
+
+document.addEventListener("mousemove", e => {
+    if(!isDragging) return;
+
+    offsetX += e.movementX;
+    offsetY += e.movementY;
+
+    if(!rafPending){
+        rafPending = true;
+        requestAnimationFrame(() => {
+            updateTransform();
+            rafPending = false;
+        });
+    }
+});
+
+document.addEventListener("mouseup", () => {
+    isDragging = false;
+    viewer.style.cursor = "grab";
+    imgContainer.style.transition = "transform 0.15s ease-out";
+});
+
+/* =======================
+   NAVIGATION
+======================= */
+prevBtn.onclick = () => { if(index>0){ index--; showImage(); } };
+nextBtn.onclick = () => { if(index<images.length-1){ index++; showImage(); } };
+
+document.addEventListener("keydown", e => {
+    if(e.key === "ArrowRight") nextBtn.click();
+    if(e.key === "ArrowLeft") prevBtn.click();
+});
+</script>
+
+</body>
+</html>
