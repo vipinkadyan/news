@@ -12,7 +12,7 @@ encoded_date = quote(today)
 
 edition_id = 1
 api_url = (
-    "https://vipin.com/Home/GetAllpages"
+    "https://epaper.hindustantimes.com/Home/GetAllpages"
     f"?editionid={edition_id}&editiondate={encoded_date}"
 )
 
@@ -68,3 +68,4 @@ for i, url in enumerate(image_links, start=1):
         print("Skipped:", url, e)
 
 print(f"Downloaded {len(image_links)} images")
+
