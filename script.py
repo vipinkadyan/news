@@ -4,63 +4,48 @@ import requests
 from urllib.parse import quote, urlparse
 from datetime import datetime
 
-# ================= CONFIG =================
-DATA_DIR = os.getenv("DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
-PIC_FOLDER = os.path.join(DATA_DIR, "pic")
-os.makedirs(PIC_FOLDER, exist_ok=True)
-
-URL_FILE = os.path.join(DATA_DIR, "weblink.txt")
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Render Bot)",
-    "Accept": "image/*,*/*;q=0.8"
-}
-# =========================================
+DOWNLOAD_FOLDER = "static/pic"
+os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 today = datetime.utcnow().strftime("%d/%m/%Y")
 encoded_date = quote(today)
 
 edition_id = 1
 api_url = (
-    "https://epaper.hindustantimes.com/Home/GetAllpages"
+    "https://vipin.com/Home/GetAllpages"
     f"?editionid={edition_id}&editiondate={encoded_date}"
 )
 
-response = requests.get(api_url, headers=HEADERS, timeout=20)
+headers = {
+    "User-Agent": "Mozilla/5.0 (GitHub Actions)"
+}
 
-if response.status_code != 200:
-    raise SystemExit(f"API failed: {response.status_code}")
-
+response = requests.get(api_url, headers=headers, timeout=20)
+response.raise_for_status()
 data = response.json()
 
 image_links = []
-seen_links = set()
+seen = set()
 
-
-def extract_image_urls(obj):
+def extract(obj):
     if isinstance(obj, dict):
         for k, v in obj.items():
             if k == "MrImageUrl" and isinstance(v, str):
-                if v not in seen_links:
-                    seen_links.add(v)
+                if v not in seen:
+                    seen.add(v)
                     image_links.append(v)
             else:
-                extract_image_urls(v)
+                extract(v)
     elif isinstance(obj, list):
         for i in obj:
-            extract_image_urls(i)
+            extract(i)
 
-
-extract_image_urls(data)
-
-with open(URL_FILE, "w", encoding="utf-8") as f:
-    for link in image_links:
-        f.write(link + "\n")
+extract(data)
 
 session = requests.Session()
-session.headers.update(HEADERS)
+session.headers.update(headers)
 
-for idx, url in enumerate(image_links, start=1):
+for i, url in enumerate(image_links, start=1):
     try:
         r = session.get(url, timeout=20, stream=True)
         r.raise_for_status()
@@ -69,17 +54,17 @@ for idx, url in enumerate(image_links, start=1):
         if ext not in [".jpg", ".jpeg", ".png", ".webp"]:
             ext = ".jpg"
 
-        filename = f"image_{idx}{ext}"
-        filepath = os.path.join(PIC_FOLDER, filename)
+        filename = f"image_{i}{ext}"
+        path = os.path.join(DOWNLOAD_FOLDER, filename)
 
-        with open(filepath, "wb") as img:
+        with open(path, "wb") as f:
             for chunk in r.iter_content(8192):
                 if chunk:
-                    img.write(chunk)
+                    f.write(chunk)
 
         time.sleep(1)
 
     except Exception as e:
-        print(f"Skipped {url} | {e}")
+        print("Skipped:", url, e)
 
-print(f"Saved {len(image_links)} images to {PIC_FOLDER}")
+print(f"Downloaded {len(image_links)} images")
