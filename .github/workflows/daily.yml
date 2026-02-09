@@ -2,7 +2,7 @@ name: Daily Image Downloader
 
 on:
   schedule:
-    - cron: "0 3 * * *"   # daily (UTC)
+    # - cron: "0 3 * * *"   # daily (UTC)
   workflow_dispatch:
 
 permissions:
